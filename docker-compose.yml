@@ -1,0 +1,34 @@
+version: '3.8'
+
+services:
+  chatbot:
+    build:
+      context: ./chatbot
+    ports:
+      - "5000:5000"
+      - "8000:8000"  # Mapeamento da porta 8000 para expor as métricas
+    networks:
+      - observability
+
+  prometheus:
+    image: prom/prometheus
+    volumes:
+      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+    ports:
+      - "9090:9090"
+    networks:
+      - observability
+
+  grafana:
+    image: grafana/grafana
+    ports:
+      - "3000:3000"
+    networks:
+      - observability
+    environment:
+      - GF_SECURITY_ADMIN_USER=admin
+      - GF_SECURITY_ADMIN_PASSWORD=admin
+
+networks:
+  observability:
+    driver: bridge

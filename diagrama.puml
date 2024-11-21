@@ -1,0 +1,25 @@
+@startuml
+actor "Usuário Final" as Usuario
+participant "Chatbot\n(Instrumentado)" as Chatbot
+participant "OpenTelemetry\nCollector" as OTelCollector
+participant "Tempo" as Tempo
+participant "Prometheus" as Prometheus
+participant "Loki" as Loki
+participant "Grafana" as Grafana
+
+Usuario -> Chatbot : Envia mensagem
+Chatbot -> Chatbot : Processa a mensagem e inicia o span
+Chatbot -> OTelCollector : Envia rastreamento, métricas e logs
+
+OTelCollector -> Tempo : Envia dados de rastreamento
+OTelCollector -> Prometheus : Envia métricas de desempenho
+OTelCollector -> Loki : Envia logs detalhados
+
+Grafana -> Tempo : Consulta rastreamentos
+Grafana -> Prometheus : Consulta métricas
+Grafana -> Loki : Consulta logs
+
+Usuario <-- Grafana : Visualiza painéis de monitoramento
+
+Chatbot -> Usuario : Responde com resultado
+@enduml
