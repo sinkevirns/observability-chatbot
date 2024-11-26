@@ -4,4 +4,4 @@ global:
 scrape_configs:
   - job_name: "chatbot"
     static_configs:
-      - targets: ["chatbot:8000"]  # Endpoint do seu Flask para métricas
+      - targets: ["host.docker.internal:8000"]  # Para conectar ao Flask no Windows
