@@ -29,12 +29,38 @@ services:
       - GF_SECURITY_ADMIN_USER=admin
       - GF_SECURITY_ADMIN_PASSWORD=admin
 
+  loki:
+    image: grafana/loki:latest
+    ports:
+      - "3100:3100"
+    networks:
+      - observability
+    volumes:
+      - ./loki/loki.yml:/etc/loki/loki.yml
+
+  promtail:
+    image: grafana/promtail:latest
+    networks:
+      - observability
+    volumes:
+      - /var/log:/var/log
+      - ./promtail/promtail.yml:/etc/promtail/promtail.yml
+
+  tempo:
+    image: grafana/tempo:latest
+    ports:
+      - "3200:3200"
+    networks:
+      - observability
+    volumes:
+      - ./tempo/tempo.yml:/etc/tempo/tempo.yml
+
   otel-collector:
     image: otel/opentelemetry-collector:latest
     ports:
       - "4317:4317"
     networks:
-      - observability  # Alterado para a rede já existente
+      - observability
     command: ["--config=/etc/otel-collector-config.yaml"]
     volumes:
       - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml

@@ -6,36 +6,43 @@ from groq import Groq
 # Configuração do Flask
 app = Flask(__name__)
 
-GROQ_API_KEY = "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"
-
 # Configuração do Groq API
+GROQ_API_KEY = "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"
 client = Groq(api_key=GROQ_API_KEY)
 
 MIXTRAL_MODEL = "mixtral-8x7b-32768"
 
 # Endpoint da API do Prometheus
-PROMETHEUS_URL = "http://prometheus:9090/api/v1/query"  # Ajuste conforme o ambiente
+PROMETHEUS_URL = "http://prometheus:9090/api/v1/query"
+LOKI_URL = "http://loki:3100/loki/api/v1/query"
+TEMPO_URL = "http://tempo:3200/api/traces"
 
-# Mapeamento dinâmico de termos para queries Prometheus
-METRIC_KEYWORDS = {
-    "cpu": "process_cpu_seconds_total",
-    "memória": "process_resident_memory_bytes",
-    "gc coletados": "python_gc_objects_collected_total",
-    "gc não coletáveis": "python_gc_objects_uncollectable_total",
-    "gc coleções": "python_gc_collections_total",
-    "info python": "python_info",
-    "memória virtual": "process_virtual_memory_bytes",
-    "memória residente": "process_resident_memory_bytes",
-    "início do processo": "process_start_time_seconds",
-    "fds abertos": "process_open_fds",
-    "fds máximos": "process_max_fds",
-    "uptime": "up",
-    "duração scrape": "scrape_duration_seconds",
-    "amostras scrape": "scrape_samples_scraped",
-    "amostras pós relabel": "scrape_samples_post_metric_relabeling",
-    "séries adicionadas": "scrape_series_added",
-}
+# Contexto para a LLM
 
+
+# Funções auxiliares para consultas
+def query_loki(log_query):
+    """Consulta logs no Loki."""
+    response = requests.get(LOKI_URL, params={"query": log_query}, timeout=5)
+    if response.status_code == 200:
+        return response.json()
+    return {"error": "Erro ao consultar Loki."}
+
+def query_tempo(trace_id):
+    """Consulta traces no Tempo."""
+    response = requests.get(f"{TEMPO_URL}/{trace_id}", timeout=5)
+    if response.status_code == 200:
+        return response.json()
+    return {"error": "Erro ao consultar Tempo."}
+
+def query_prometheus(metric_name):
+    """Consulta métricas no Prometheus."""
+    response = requests.get(PROMETHEUS_URL, params={"query": metric_name}, timeout=5)
+    if response.status_code == 200:
+        return response.json()
+    return {"error": "Erro ao consultar Prometheus."}
+
+# Rotas Flask
 @app.route("/", methods=["GET"])
 def welcome():
     html_template = """
@@ -163,45 +170,174 @@ def welcome():
 @app.route("/ask", methods=["POST"])
 def ask_question():
     try:
-        # Captura da pergunta do usuário
         user_input = request.json.get("question", "").strip().lower()
 
-        # Identificar query baseada em palavras-chave
+        # Contexto para o modelo Groq
+        context = """
+        Você é uma IA especializada em responder perguntas sobre métricas do Prometheus e Loki.
+        Sua função é interpretar o que o usuário pergunta, gerar as consultas necessárias para Prometheus ou Loki e fornecer respostas detalhadas com base nos resultados.
+        Se a consulta exigir um período específico (como 5 minutos, 1 hora, etc.), tente identificar o intervalo necessário. Caso contrário, considere usar o valor total acumulado.
+        """
+
+        # Variáveis para consulta
         query = None
-        for keyword, prometheus_query in METRIC_KEYWORDS.items():
-            if keyword in user_input:
-                query = prometheus_query
-                break
+        metric_description = None
+        is_loki_query = False  # Flag para identificar se a consulta é sobre o Loki
 
-        # Processar métricas do Prometheus se houver uma query
-        if query:
-            response = requests.get(PROMETHEUS_URL, params={"query": query}, timeout=5)
-            if response.status_code != 200:
-                return jsonify({"answer": "Erro ao acessar métricas do Prometheus."})
-
-            data = response.json()
-            if "data" in data and "result" in data["data"] and len(data["data"]["result"]) > 0:
-                value = data["data"]["result"][0]["value"][1]
-                return jsonify({"answer": f"Resultado para '{query}': {value}"})
+        # Identificar a consulta baseada nas palavras-chave
+        if "cpu" in user_input:
+            if "loki" in user_input:
+                is_loki_query = True  # A consulta é para Loki
+                query = '{job="your_loki_job_name", metric="process_cpu_seconds_total"}'  # Ajuste conforme seu nome de job
+                metric_description = "uso de CPU do Loki"
+            elif "total" in user_input or "geral" in user_input:
+                query = "sum(process_cpu_seconds_total)"
+                metric_description = "tempo total de uso de CPU do Prometheus"
+            elif "últimos 5 minutos" in user_input:
+                query = "rate(process_cpu_seconds_total[5m])"
+                metric_description = "uso médio de CPU do Prometheus nos últimos 5 minutos"
             else:
-                return jsonify({"answer": f"Não foi possível encontrar dados para a métrica '{query}'."})
+                query = "sum(process_cpu_seconds_total)"
+                metric_description = "tempo total de uso de CPU do Prometheus"
 
-        # Processar perguntas genéricas usando Groq
-        completion = client.chat.completions.create(
+        elif "memória" in user_input:
+            query = "process_resident_memory_bytes"
+            metric_description = "uso atual de memória residente"
+        
+        elif "disco" in user_input:
+            query = "node_filesystem_avail_bytes"
+            metric_description = "espaço disponível em disco"
+        
+        elif "rede" in user_input:
+            query = "rate(node_network_receive_bytes_total[5m])"
+            metric_description = "taxa de recebimento de dados na rede nos últimos 5 minutos"
+
+        # Caso haja uma consulta válida
+        if query:
+            if is_loki_query:
+                # Consultar Loki, se a flag for verdadeira
+                loki_response = requests.get(
+                    LOKI_URL, params={"query": query}, timeout=5
+                )
+
+                if loki_response.status_code != 200:
+                    return jsonify(
+                        {"answer": f"Erro ao acessar métricas do Loki. Status code: {loki_response.status_code}. Detalhes: {loki_response.text}"}
+                    )
+
+                try:
+                    loki_data = loki_response.json()
+                    if "data" in loki_data and "result" in loki_data["data"]:
+                        results = loki_data["data"]["result"]
+                        if results:
+                            # Formatar os dados para enviar ao Groq
+                            metric_values = [
+                                {
+                                    "metric": item["metric"],
+                                    "value": item["value"][1],
+                                }
+                                for item in results
+                            ]
+                            groq_input = f"""
+                            {context}
+
+                            O usuário perguntou: "{user_input}"
+
+                            Dados Loki obtidos para a métrica "{metric_description}":
+                            {metric_values}
+
+                            Gere uma resposta detalhada com base nesses dados.
+                            """
+
+                            # Consultar o modelo Groq para gerar a resposta
+                            groq_response = client.chat.completions.create(
+                                model=MIXTRAL_MODEL,
+                                messages=[{"role": "system", "content": groq_input}],
+                                temperature=1,
+                                max_tokens=1024,
+                                top_p=1,
+                            )
+
+                            return jsonify({"answer": groq_response.choices[0].message.content.strip()})
+
+                        else:
+                            return jsonify(
+                                {"answer": f"Não há dados disponíveis para a métrica '{metric_description}' no momento."}
+                            )
+                    else:
+                        return jsonify({"answer": "Erro ao processar a resposta do Loki: dados ausentes."})
+                except Exception as e:
+                    return jsonify({"answer": f"Erro ao processar os dados do Loki: {str(e)}"})
+
+            else:
+                # Consultar Prometheus se não for uma consulta Loki
+                prometheus_response = requests.get(
+                    PROMETHEUS_URL, params={"query": query}, timeout=5
+                )
+
+                if prometheus_response.status_code != 200:
+                    return jsonify(
+                        {"answer": f"Erro ao acessar métricas do Prometheus. Status code: {prometheus_response.status_code}. Detalhes: {prometheus_response.text}"}
+                    )
+
+                try:
+                    prometheus_data = prometheus_response.json()
+                    if "data" in prometheus_data and "result" in prometheus_data["data"]:
+                        results = prometheus_data["data"]["result"]
+                        if results:
+                            # Formatar os dados para enviar ao Groq
+                            metric_values = [
+                                {
+                                    "metric": item["metric"],
+                                    "value": item["value"][1],
+                                }
+                                for item in results
+                            ]
+                            groq_input = f"""
+                            {context}
+
+                            O usuário perguntou: "{user_input}"
+
+                            Dados Prometheus obtidos para a métrica "{metric_description}":
+                            {metric_values}
+
+                            Gere uma resposta detalhada com base nesses dados.
+                            """
+
+                            # Consultar o modelo Groq para gerar a resposta
+                            groq_response = client.chat.completions.create(
+                                model=MIXTRAL_MODEL,
+                                messages=[{"role": "system", "content": groq_input}],
+                                temperature=1,
+                                max_tokens=1024,
+                                top_p=1,
+                            )
+
+                            return jsonify({"answer": groq_response.choices[0].message.content.strip()})
+
+                        else:
+                            return jsonify(
+                                {"answer": f"Não há dados disponíveis para a métrica '{metric_description}' no momento."}
+                            )
+                    else:
+                        return jsonify({"answer": "Erro ao processar a resposta do Prometheus: dados ausentes."})
+                except Exception as e:
+                    return jsonify({"answer": f"Erro ao processar os dados do Prometheus: {str(e)}"})
+
+        # Caso não seja uma pergunta relacionada a métricas
+        groq_response = client.chat.completions.create(
             model=MIXTRAL_MODEL,
-            messages=[{"role": "user", "content": user_input}],
+            messages=[{"role": "system", "content": context}, {"role": "user", "content": user_input}],
             temperature=1,
             max_tokens=1024,
             top_p=1,
-            stream=False,
         )
-        return jsonify({"answer": completion.choices[0].message.content.strip()})
+        return jsonify({"answer": groq_response.choices[0].message.content.strip()})
 
     except requests.exceptions.ConnectionError:
-        return jsonify({"answer": "Erro: Não foi possível se conectar ao Prometheus. Verifique o endereço ou se o serviço está ativo."})
+        return jsonify({"answer": "Erro: Não foi possível se conectar aos serviços."})
     except Exception as e:
         return jsonify({"answer": f"Erro ao processar a consulta: {str(e)}"})
-
 
 if __name__ == "__main__":
     # Iniciar servidor de métricas na porta 8000
