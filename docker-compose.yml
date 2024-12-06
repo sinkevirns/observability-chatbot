@@ -50,6 +50,7 @@ services:
     image: grafana/tempo:latest
     ports:
       - "3200:3200"
+      - "9095:9095"
     networks:
       - observability
     volumes:
@@ -61,7 +62,7 @@ services:
       - "4317:4317"
     networks:
       - observability
-    command: ["--config=/etc/otel-collector-config.yaml"]
+    command: ["--config=/etc/otel-collector-config.yaml", "--log-level=DEBUG" ]
     volumes:
       - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml
 

@@ -1,21 +1,42 @@
+auth_enabled: false
+
 server:
   http_listen_port: 3200
+  grpc_listen_port: 9095
 
 distributor:
   receivers:
     jaeger:
       protocols:
-        grpc:
-        thrift_binary:
-        thrift_compact:
-        thrift_http:
+        grpc: {}
+        thrift_binary: {}
+        thrift_compact: {}
+        thrift_http: {}
 
 querier:
   frontend_worker:
-    frontend_address: 127.0.0.1:9095
+    frontend_address: 0.0.0.0:9095
 
 storage:
   trace:
     backend: local
     local:
       path: /tempo/traces
+
+ingester:
+  lifecycler:
+    ring:
+      kvstore:
+        store: inmemory
+      replication_factor: 1
+  max_transfer_retries: 0
+
+limits_config:
+  max_traces_per_user: 500000
+  max_span_age: 168h
+
+compactor:
+  compaction_window: 2h
+
+frontend:
+  compress_responses: true

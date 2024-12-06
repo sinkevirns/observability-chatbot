@@ -1,0 +1,9 @@
+# Ignorar pasta __pycache__
+__pycache__/
+
+# Ignorar arquivos sensíveis
+.env
+
+# Ignorar logs e arquivos temporários
+*.log
+*.tmp
