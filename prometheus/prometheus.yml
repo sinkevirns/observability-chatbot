@@ -5,3 +5,11 @@ scrape_configs:
   - job_name: "chatbot"
     static_configs:
       - targets: ["host.docker.internal:8000"]  # Para conectar ao Flask no Windows
+
+  - job_name: "tempo"
+    static_configs:
+      - targets: ["tempo:3200"]  # Alvo para o Tempo
+
+  - job_name: "loki"
+    static_configs:
+      - targets: ["loki:3100"]  # Alvo para o Loki
