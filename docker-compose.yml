@@ -6,14 +6,16 @@ services:
       context: ./chatbot
     ports:
       - "5000:5000"
-      - "8000:8000"  # Mapeamento da porta 8000 para expor as métricas
+      - "8000:8000"
     networks:
       - observability
+    env_file:
+      - .env 
 
   prometheus:
     image: prom/prometheus
     volumes:
-      - ./prometheus/prometheus.yml:/etc/prometheus/prometheus.yml
+      - ./configs/prometheus.yml:/etc/configs/prometheus.yml
     ports:
       - "9090:9090"
     networks:
@@ -36,7 +38,7 @@ services:
     networks:
       - observability
     volumes:
-      - ./loki/loki.yml:/etc/loki/loki.yml
+      - ./configs/loki.yml:/etc/configs/loki.yml
 
   promtail:
     image: grafana/promtail:latest
@@ -44,17 +46,18 @@ services:
       - observability
     volumes:
       - /var/log:/var/log
-      - ./promtail/promtail.yml:/etc/promtail/promtail.yml
+      - ./configs/promtail.yml:/etc/configs/promtail.yml
 
   tempo:
     image: grafana/tempo:latest
     ports:
       - "3200:3200"
-      - "9095:9095"
     networks:
       - observability
     volumes:
-      - ./tempo/tempo.yml:/etc/tempo/tempo.yml
+      - ./configs/tempo.yml:/etc/configs/tempo.yml
+      - /tmp/tempo:/tmp/tempo
+
 
   otel-collector:
     image: otel/opentelemetry-collector:latest
@@ -62,9 +65,10 @@ services:
       - "4317:4317"
     networks:
       - observability
-    command: ["--config=/etc/otel-collector-config.yaml", "--log-level=DEBUG" ]
+    command: 
+      - "--config=/etc/otel-collector-config.yaml"
     volumes:
-      - ./otel-collector-config.yaml:/etc/otel-collector-config.yaml
+      - ./configs/otel-collector-config.yaml:/etc/otel-collector-config.yaml
 
 networks:
   observability:

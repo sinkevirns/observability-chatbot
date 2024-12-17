@@ -232,6 +232,19 @@ def ask_question():
         Se a consulta exigir um período específico (como 5 minutos, 1 hora, etc.), tente identificar o intervalo necessário. Caso contrário, considere usar o valor total acumulado.
         """
 
+        context = (
+            "Você é uma IA especializada em responder perguntas sobre métricas do Prometheus e Loki."
+            "Sua função é interpretar o que o usuário pergunta, gerar as consultas necessárias para Prometheus ou Loki e "
+            " fornecer respostas detalhadas com base nos resultados."
+            "Se a consulta exigir um período específico (como 5 minutos, 1 hora, etc.), "
+            "tente identificar o intervalo necessário. "
+            " Caso contrário, considere usar o valor total acumulado."
+            "Considere as seguintes formas de extracao da informacao:"
+            "- definir escala de tempo (minutos=m, segundos=s,...)"
+            "- CPU as metricas disponiveis sao: nome1, nome2...."
+            "- Netowrk as metricas disponiveis sao: nome1, nome2...."
+        )
+
         # Variáveis para consulta
         query = None
         metric_description = None
